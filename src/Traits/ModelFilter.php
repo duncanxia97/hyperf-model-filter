@@ -116,9 +116,10 @@ trait ModelFilter
                 /** @var ModelColumnFilterInterface $enum */
                 $enum = call_user_func([$this->__modelColumn, 'convert'], $field);
                 if (!empty($enum?->rules())) {
-                    \Hyperf\Support\make(ValidatorFactoryInterface::class)->make(
+                    \Hyperf\Support\make(ValidatorFactoryInterface::class)
+                        ->make(
                                           [$field => $whereKVs[$index]],
-                                          $enum->rules(),
+                                          [$enum->rules()],
                         customAttributes: [$field => $enum->attribute()]
                     )
                         ->validate();
