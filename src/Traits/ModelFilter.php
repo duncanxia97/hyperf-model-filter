@@ -252,12 +252,12 @@ trait ModelFilter
                 $this->whereVals[] = null;
                 continue;
             }
-            $value = ($where['value'] ?? null) ?: '';
+            $value = $where['value'] ?? '';
             if (!is_string($value)) {
                 $this->whereVals[] = $value;
                 continue;
             }
-            $this->whereVals[] = Str::between($where['value'] ?? '', '%', '%');
+            $this->whereVals[] = Str::between((string)($where['value'] ?? ''), '%', '%');
         }
     }
 
