@@ -16,9 +16,10 @@ use Hyperf\Validation\Contract\ValidatorFactoryInterface;
 use Hyperf\Validation\ValidationException;
 
 /**
+ * @psalm-type QueryMappingCall = callable(Builder $query, mixed $value, mixed $option)
  * @mixin Model
  * @method Builder|static modelFilter(ModelColumnFilterInterface|string|array|null $modelColumn = null)
- * @method Builder|static queryMapping(string $field, callable $call) 查询映射(ps: 一般定义在modelFilter之前)
+ * @method Builder|static queryMapping(string $field, callable|QueryMappingCall $call) 查询映射(ps: 一般定义在modelFilter之前) 查询传参如下: callable(Builder $query, mixed $value, mixed $option)
  * @property ModelColumnFilterInterface $modelColumn
  * @property string                     $filterFieldName      筛选字段
  * @property bool                       $checkFilterFieldDiff 是否开启检查筛选字段差异
