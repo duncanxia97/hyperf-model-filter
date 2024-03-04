@@ -18,6 +18,7 @@ use Hyperf\Validation\ValidationException;
 /**
  * @mixin Model
  * @method Builder|static modelFilter(ModelColumnFilterInterface|string|array|null $modelColumn = null)
+ * @method Builder|static queryMapping(string $field, callable $call) 查询映射(ps: 一般定义在modelFilter之前)
  * @property ModelColumnFilterInterface $modelColumn
  * @property string                     $filterFieldName      筛选字段
  * @property bool                       $checkFilterFieldDiff 是否开启检查筛选字段差异
@@ -49,6 +50,28 @@ trait ModelFilter
      * @var string|null|ModelColumnFilterInterface
      */
     private string|array|null $__modelColumn = null;
+
+    /**
+     * @var array|callable[] 查询映射
+     */
+    private array $__queryMapping = [];
+
+    /**
+     * @author XJ.
+     * @Date   2024/3/4 0004
+     *
+     * @param          $query
+     * @param          $field string
+     * @param          $call  callable(Builder $query, mixed $value, mixed $option)
+     *
+     * @return mixed
+     */
+    public function scopeQueryMapping($query, string $field, callable $call)
+    {
+        $this->__queryMapping[$field] = $call;
+
+        return $query;
+    }
 
 
     /**
@@ -118,10 +141,10 @@ trait ModelFilter
                 if (!empty($enum?->rules())) {
                     \Hyperf\Support\make(ValidatorFactoryInterface::class)
                         ->make(
-                                          [$field => $whereKVs[$index]],
-                                          [$enum->rules()],
-                        customAttributes: [$field => $enum->attribute()]
-                    )
+                                              [$field => $whereKVs[$index]],
+                                              [$enum->rules()],
+                            customAttributes: [$field => $enum->attribute()]
+                        )
                         ->validate();
                 }
             }
@@ -162,10 +185,17 @@ trait ModelFilter
                         $field = $with . '.' . $field;
                     }
                     $this->whereFieldIndex[] = $field;
-                    $field                   = $this->fieldConvert($field);
+                    if (!isset($this->__queryMapping[$field])) {
+                        $field = $this->fieldConvert($field);
+                    }
                     if (is_array($val)) {
                         if (isset($val[0])) {
                             if (count($val) > 4) {
+                                if (isset($this->__queryMapping[$field])) {
+                                    // todo: 代码优化
+                                    $query->where(fn($q) => $this->__queryMapping[$field]($q, $val, 'in'), boolean: $boolean);
+                                    continue;
+                                }
                                 $query->whereIn($field, $val, boolean: $boolean);
 
                                 continue;
@@ -173,11 +203,19 @@ trait ModelFilter
                             if (Str::endsWith($val[0], 'like') && count($val) < 4) {
                                 [$val[0], $val[1]] = $this->toWhereCondition($val[0], $val[1]);
                                 $val['boolean'] = $boolean;
+                                if (isset($this->__queryMapping[$field])) {
+                                    $query->where(fn($q) => $this->__queryMapping[$field]($q, $val[1], 'like'), boolean: $boolean);
+                                    continue;
+                                }
                                 $query->where($field, ...$val);
                                 continue;
                             }
                             if (!is_numeric($val[0])
                                 && in_array($val[0], $query->getQuery()->operators ?? $this->whereConditionFormula)) {
+                                if (isset($this->__queryMapping[$field])) {
+                                    $query->where(fn($q) => $this->__queryMapping[$field]($q, $val[1], $val[0]), boolean: $boolean);
+                                    continue;
+                                }
                                 $query->where($field, $val[0], $val[1], boolean: $boolean);
                                 continue;
                             }
@@ -185,6 +223,10 @@ trait ModelFilter
                                 !is_numeric($val[0])
                                 && is_callable([$query, 'where' . Str::studly($val[0])])
                             ) {
+                                if (isset($this->__queryMapping[$field])) {
+                                    $query->where(fn($q) => $this->__queryMapping[$field]($q, $val[1], '='), boolean: $boolean);
+                                    continue;
+                                }
                                 $query->{'where' . Str::studly($val[0])}($field, $val[1], boolean: $boolean);
                                 continue;
                             }
@@ -193,29 +235,52 @@ trait ModelFilter
                             $k = strtolower($k);
                             if (Str::endsWith($k, 'like')) {
                                 $where = $this->toWhereCondition($k, $v);
+                                if (isset($this->__queryMapping[$field])) {
+                                    $query->where(fn($q) => $this->__queryMapping[$field]($q, $where[1], 'like'), boolean: $boolean);
+                                    continue;
+                                }
                                 $query->where($field, $where[0], $where[1], boolean: $boolean);
 
                                 continue;
                             }
                             if (!is_numeric($k) && is_callable([$query, 'where' . Str::studly($k)])) {
+                                if (isset($this->__queryMapping[$field])) {
+                                    $query->where(fn($q) => $this->__queryMapping[$field]($q, $v, '='), boolean: $boolean);
+                                    continue;
+                                }
                                 $query->{'where' . Str::studly($k)}($field, $v, boolean: $boolean);
 
                                 continue;
                             }
                             if (is_array($v) && isset($v[0])) {
                                 if (is_callable([$query, 'where' . Str::studly($v[0])])) {
-                                    $v['boolean'] = $boolean;
-                                    $query->{'where' . Str::studly($v[0])}($field, $v[1]);
+                                    if (isset($this->__queryMapping[$field])) {
+                                        $query->where(fn($q) => $this->__queryMapping[$field]($q, $v, '='), boolean: $boolean);
+                                        continue;
+                                    }
+                                    $query->{'where' . Str::studly($v[0])}($field, $v[1], boolean: $boolean);
 
                                     continue;
                                 }
                                 $v['boolean'] = $boolean;
+                                if (isset($this->__queryMapping[$field])) {
+                                    $query->where(fn($q) => $this->__queryMapping[$field]($q, $v[1], $v[0]), boolean: $boolean);
+                                    continue;
+                                }
                                 $query->where($field, $k, ...$v);
 
                                 continue;
                             }
+                            if (isset($this->__queryMapping[$field])) {
+                                $query->where(fn($q) => $this->__queryMapping[$field]($q, $v, $k), boolean: $boolean);
+                                continue;
+                            }
                             $query->where($field, $k, $v, boolean: $boolean);
                         }
+                        continue;
+                    }
+                    if (isset($this->__queryMapping[$field])) {
+                        $query->where(fn($q) => $this->__queryMapping[$field]($q, $val, '='), boolean: $boolean);
                         continue;
                     }
                     $query->where($field, '=', $val, boolean: $boolean);
